@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
 import { z } from "zod";
 import { exec } from "child_process";
@@ -205,13 +206,19 @@ function formatResult(result: GwsResult): string {
 }
 
 // ---------------------------------------------------------------------------
-// MCP Server
+// MCP Server factory (needed because SSE creates a server per connection)
 // ---------------------------------------------------------------------------
 
-const server = new McpServer({
-  name: "gws-mcp-server",
-  version: "1.0.0",
-});
+function createServer(): McpServer {
+  const server = new McpServer({
+    name: "gws-mcp-server",
+    version: "1.0.0",
+  });
+  registerTools(server);
+  return server;
+}
+
+function registerTools(server: McpServer): void {
 
 // ---- Tool: gws_run ----
 
@@ -410,6 +417,8 @@ Example: raw_args="drive files list --params '{\"pageSize\": 5}' --page-all --pa
   }
 );
 
+} // end registerTools
+
 // ---------------------------------------------------------------------------
 // Express app: OAuth flow + MCP endpoint
 // ---------------------------------------------------------------------------
@@ -566,14 +575,40 @@ async function startServer(): Promise<void> {
     }
   });
 
-  // ----- MCP endpoint (Streamable HTTP, stateless) -----
+  // ----- MCP: Legacy SSE transport (what Claude.ai uses) -----
+  const sseTransports = new Map<string, { transport: SSEServerTransport; server: McpServer }>();
+
+  app.get("/sse", async (_req, res) => {
+    console.error("[gws-mcp] SSE connection established");
+    const transport = new SSEServerTransport("/messages", res);
+    const mcpServer = createServer();
+    sseTransports.set(transport.sessionId, { transport, server: mcpServer });
+    res.on("close", () => {
+      console.error(`[gws-mcp] SSE session ${transport.sessionId} closed`);
+      sseTransports.delete(transport.sessionId);
+    });
+    await mcpServer.connect(transport);
+  });
+
+  app.post("/messages", async (req, res) => {
+    const sessionId = req.query.sessionId as string;
+    const entry = sseTransports.get(sessionId);
+    if (!entry) {
+      res.status(400).json({ error: "Unknown session" });
+      return;
+    }
+    await entry.transport.handlePostMessage(req, res);
+  });
+
+  // ----- MCP: Streamable HTTP transport (newer protocol) -----
   app.post("/mcp", async (req, res) => {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
     res.on("close", () => transport.close());
-    await server.connect(transport);
+    const mcpServer = createServer();
+    await mcpServer.connect(transport);
     await transport.handleRequest(req, res, req.body);
   });
 
