@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: gws-mcp-server
+    runtime: docker
+    repo: https://github.com/YOUR_ORG/gws-mcp-server
+    plan: starter
+    healthCheckPath: /health
+    disk:
+      name: gws-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      # Required: create a Web Application OAuth client in GCP console
+      # (not Desktop -- we need a redirect URI)
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Optional: set after first /auth/login to persist across redeploys
+      - key: GWS_REFRESH_TOKEN
+        sync: false
+      # Optional: override default scopes
+      # - key: GWS_SCOPES
+      #   value: "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.modify"
+      - key: GWS_TIMEOUT
+        value: "30000"
