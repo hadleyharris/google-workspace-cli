@@ -1,12 +1,16 @@
-FROM node:22-slim
+FROM node:22
 
 WORKDIR /app
 
 # Install gws CLI globally
 RUN npm install -g @googleworkspace/cli
 
-# Create data dir for token persistence (mount a Render disk here)
+# Create data dir for token persistence
 RUN mkdir -p /data
+
+# Ensure Rust binary can find system CA certs
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Copy package files and install deps
 COPY package.json package-lock.json* ./
