@@ -427,6 +427,19 @@ async function startServer(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  // CORS -- needed for Claude.ai browser-based MCP connections
+  app.use((_req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, Mcp-Session-Id");
+    res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+    if (_req.method === "OPTIONS") {
+      res.status(200).end();
+      return;
+    }
+    next();
+  });
+
   // ----- Health -----
   app.get("/health", (_req, res) => {
     res.json({
